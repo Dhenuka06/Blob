@@ -229,7 +229,21 @@
       margin-top: 16px;
       line-height: 1.5;
     }
-    .kbd { display: inline-block; padding: 2px 5px; border-radius: 4px; background: rgba(255,255,255,0.08); font-size: 0.6rem; }
+    .gallery-item-btn {
+      text-align: left; width: 100%; padding: 8px 12px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02);
+      color: rgba(255,255,255,0.85); font-family: 'DM Sans', sans-serif; font-size: 0.7rem;
+      cursor: pointer; transition: all 0.2s; display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 4px;
+    }
+    .gallery-item-btn:hover {
+      background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); color: #fff;
+      transform: translateX(2px);
+    }
+    #preset-name:focus {
+      border-color: rgba(100, 200, 255, 0.4) !important;
+      box-shadow: 0 0 8px rgba(100, 200, 255, 0.15);
+    }
 
     /* Desktop sidebar */
     @media (min-width: 769px) {
@@ -338,6 +352,22 @@
         </div>
       </section>
 
+      <section class="section">
+        <div class="panel-header">Save & Share</div>
+        <input type="text" id="preset-name" placeholder="Name your creation..." maxlength="20" style="width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.25); color: #fff; font-family: 'DM Sans', sans-serif; font-size: 0.75rem; margin-bottom: 8px; outline: none; transition: border-color 0.2s;" />
+        <div class="btn-grid cols-2">
+          <button class="pill" id="save-btn">Save Preset</button>
+          <button class="pill" id="share-btn">Copy Link</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="panel-header">Gallery</div>
+        <div id="gallery-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 140px; overflow-y: auto; padding-right: 4px;">
+          <!-- Gallery items loaded here -->
+        </div>
+      </section>
+
       <p class="hint">
         <span class="kbd">1</span>–<span class="kbd">6</span> shapes ·
         <span class="kbd">Q</span>–<span class="kbd">Y</span> materials ·
@@ -350,13 +380,240 @@
   {
     "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+      "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
     }
   }
   </script>
   <script type="module">
     import * as THREE from 'three';
     import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+    import { initializeApp } from 'firebase/app';
+    import { getFirestore, collection, addDoc, getDocs, doc, getDoc, limit, query, orderBy } from 'firebase/firestore';
+
+    // ——— Firebase Configuration ———
+    // Paste your Firebase Config credentials here to enable global database syncing.
+    // If left empty, the site automatically falls back to LocalStorage mode.
+    const firebaseConfig = {
+      apiKey: "",
+      authDomain: "",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: ""
+    };
+
+    let db = null;
+    let isFirebaseEnabled = false;
+
+    if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+      try {
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        isFirebaseEnabled = true;
+        console.log("Firebase initialized successfully. Cloud gallery enabled.");
+      } catch (err) {
+        console.warn("Failed to initialize Firebase, running in LocalStorage mode:", err);
+      }
+    } else {
+      console.log("No Firebase credentials provided. Running in LocalStorage mode.");
+    }
+
+    // ——— Database Operations (Cloud Firestore + LocalStorage Fallback) ———
+    async function savePreset(name, data) {
+      const preset = {
+        name: name,
+        shape: data.shape,
+        material: data.material,
+        color: data.color,
+        distortion: data.distortion,
+        speed: data.speed,
+        glow: data.glow,
+        mood: data.mood,
+        createdAt: new Date().toISOString()
+      };
+
+      if (isFirebaseEnabled) {
+        try {
+          const docRef = await addDoc(collection(db, "presets"), preset);
+          return docRef.id;
+        } catch (err) {
+          console.error("Cloud save failed, using local storage fallback:", err);
+        }
+      }
+
+      // Local storage fallback
+      const localPresets = JSON.parse(localStorage.getItem('studio_presets') || '{}');
+      const uniqueId = 'local_' + Math.random().toString(36).substr(2, 9);
+      localPresets[uniqueId] = preset;
+      localStorage.setItem('studio_presets', JSON.stringify(localPresets));
+      return uniqueId;
+    }
+
+    async function getPreset(id) {
+      if (isFirebaseEnabled && !id.startsWith('local_')) {
+        try {
+          const docRef = doc(db, "presets", id);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            return docSnap.data();
+          }
+        } catch (err) {
+          console.error("Error reading cloud preset:", err);
+        }
+      }
+
+      // Local storage read
+      const localPresets = JSON.parse(localStorage.getItem('studio_presets') || '{}');
+      return localPresets[id] || null;
+    }
+
+    async function fetchAllPresets() {
+      const presets = [];
+
+      // Load local presets
+      const localPresets = JSON.parse(localStorage.getItem('studio_presets') || '{}');
+      for (const [id, data] of Object.entries(localPresets)) {
+        presets.push({ id, ...data });
+      }
+
+      // Load cloud presets
+      if (isFirebaseEnabled) {
+        try {
+          const q = query(collection(db, "presets"), orderBy("createdAt", "desc"), limit(20));
+          const querySnapshot = await getDocs(q);
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            if (!presets.some(p => p.id === doc.id)) {
+              presets.push({ id: doc.id, ...data });
+            }
+          });
+        } catch (err) {
+          console.error("Error loading cloud gallery:", err);
+        }
+      }
+
+      // Sort by creation date descending
+      presets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      return presets.slice(0, 30);
+    }
+
+    // ——— Preset Loading & Applying ———
+    function applyPresetConfig(config) {
+      if (config.shape !== undefined) {
+        switchShape(config.shape);
+        const btn = document.querySelector(`.shape-btn[data-shape="${config.shape}"]`);
+        if (btn) setActiveInGroup('.shape-btn', btn);
+      }
+      if (config.material !== undefined) {
+        switchMaterial(config.material);
+        const btn = document.querySelector(`.mat-btn[data-mat="${config.material}"]`);
+        if (btn) setActiveInGroup('.mat-btn', btn);
+      }
+      if (config.color !== undefined) {
+        state.useMoodColor = false;
+        applyColor(config.color.startsWith('#') ? config.color : '#' + config.color);
+        document.getElementById('custom-color').value = config.color.startsWith('#') ? config.color : '#' + config.color;
+        document.querySelectorAll('.swatch').forEach(s => {
+          if (s.dataset.color.toLowerCase() === (config.color.startsWith('#') ? config.color.toLowerCase() : '#' + config.color.toLowerCase())) {
+            s.classList.add('active');
+          } else {
+            s.classList.remove('active');
+          }
+        });
+        document.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('active'));
+      }
+      if (config.distortion !== undefined) {
+        state.distortion = config.distortion;
+        const slider = document.getElementById('distortion');
+        if (slider) slider.value = config.distortion;
+        const valSpan = document.getElementById('val-distortion');
+        if (valSpan) valSpan.textContent = config.distortion.toFixed(2);
+      }
+      if (config.speed !== undefined) {
+        state.speed = config.speed;
+        const slider = document.getElementById('speed');
+        if (slider) slider.value = config.speed;
+        const valSpan = document.getElementById('val-speed');
+        if (valSpan) valSpan.textContent = config.speed.toFixed(1) + '×';
+      }
+      if (config.glow !== undefined) {
+        state.glow = config.glow;
+        const glowToggle = document.getElementById('glow-toggle');
+        if (glowToggle) {
+          glowToggle.classList.toggle('on', config.glow);
+          glowToggle.setAttribute('aria-checked', config.glow);
+        }
+        if (haloMesh) haloMesh.visible = config.glow;
+      }
+      if (config.mood !== undefined) {
+        state.mood = config.mood;
+        if (config.color === undefined) {
+          state.useMoodColor = true;
+          const btn = document.querySelector(`.mood-btn[data-mood="${config.mood}"]`);
+          if (btn) setActiveInGroup('.mood-btn', btn);
+        }
+        updateEnvironmentMap(config.mood);
+      }
+    }
+
+    async function applyPresetFromURL() {
+      const params = new URLSearchParams(window.location.search);
+      
+      // Method A: Database ID lookup
+      if (params.has('id')) {
+        const id = params.get('id');
+        const preset = await getPreset(id);
+        if (preset) {
+          applyPresetConfig(preset);
+          return;
+        }
+      }
+
+      // Method B: Raw parameters parsing
+      const config = {};
+      if (params.has('s')) config.shape = parseInt(params.get('s'), 10);
+      if (params.has('m')) config.material = parseInt(params.get('m'), 10);
+      if (params.has('c')) config.color = '#' + params.get('c');
+      if (params.has('d')) config.distortion = parseFloat(params.get('d'));
+      if (params.has('sp')) config.speed = parseFloat(params.get('sp'));
+      if (params.has('g')) config.glow = params.get('g') === '1';
+      if (params.has('md')) config.mood = params.get('md');
+      
+      if (Object.keys(config).length > 0) {
+        applyPresetConfig(config);
+      }
+    }
+
+    async function updateGalleryUI() {
+      const galleryList = document.getElementById('gallery-list');
+      if (!galleryList) return;
+      galleryList.innerHTML = '';
+
+      const presets = await fetchAllPresets();
+      if (presets.length === 0) {
+        galleryList.innerHTML = '<p style="font-size:0.65rem; color:rgba(255,255,255,0.3); text-align:center; padding:10px 0;">No presets saved yet.</p>';
+        return;
+      }
+
+      presets.forEach(p => {
+        const btn = document.createElement('button');
+        btn.className = 'gallery-item-btn';
+        const isLocal = p.id.startsWith('local_');
+        const badge = isLocal ? 'local' : 'cloud';
+        
+        btn.innerHTML = `
+          <span style="font-weight: 500; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 140px;">${p.name}</span>
+          <span style="font-size: 0.55rem; color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.06); padding: 2px 5px; border-radius: 4px;">${badge}</span>
+        `;
+        
+        btn.addEventListener('click', () => {
+          applyPresetConfig(p);
+        });
+        galleryList.appendChild(btn);
+      });
+    }
 
     // ——— Simplex 3D noise (compact) ———
     const grad3 = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
@@ -1419,7 +1676,77 @@
     applyColor('#66ccff');
 
     computeShapeTargets(0, 0);
+
+    // Bind UI actions for Save & Copy Share Link
+    document.getElementById('save-btn').addEventListener('click', async () => {
+      const nameInput = document.getElementById('preset-name');
+      const name = nameInput.value.trim() || "Unnamed Shape";
+      
+      const config = {
+        shape: state.targetShape,
+        material: state.matIndex,
+        color: state.baseColor.getHexString(),
+        distortion: state.distortion,
+        speed: state.speed,
+        glow: state.glow,
+        mood: state.mood
+      };
+
+      const saveBtn = document.getElementById('save-btn');
+      saveBtn.disabled = true;
+      saveBtn.innerText = "Saving...";
+
+      try {
+        const id = await savePreset(name, config);
+        nameInput.value = "";
+        saveBtn.innerText = "Saved!";
+        
+        // Push preset ID into URL
+        const newUrl = `${window.location.origin}${window.location.pathname}?id=${id}`;
+        window.history.pushState({ path: newUrl }, '', newUrl);
+        
+        await updateGalleryUI();
+      } catch (err) {
+        console.error("Preset save failed:", err);
+        saveBtn.innerText = "Error";
+      }
+
+      setTimeout(() => {
+        saveBtn.disabled = false;
+        saveBtn.innerText = "Save Preset";
+      }, 2000);
+    });
+
+    document.getElementById('share-btn').addEventListener('click', () => {
+      const c = state.baseColor.getHexString();
+      const gVal = state.glow ? '1' : '0';
+      const link = `${window.location.origin}${window.location.pathname}?s=${state.targetShape}&m=${state.matIndex}&c=${c}&d=${state.distortion.toFixed(2)}&sp=${state.speed.toFixed(1)}&g=${gVal}&md=${state.mood}`;
+      
+      const shareBtn = document.getElementById('share-btn');
+      shareBtn.disabled = true;
+      shareBtn.innerText = "Copied!";
+
+      navigator.clipboard.writeText(link).then(() => {
+        setTimeout(() => {
+          shareBtn.disabled = false;
+          shareBtn.innerText = "Copy Link";
+        }, 1500);
+      }).catch(err => {
+        console.error("Clipboard copy failed:", err);
+        shareBtn.innerText = "Error";
+        setTimeout(() => {
+          shareBtn.disabled = false;
+          shareBtn.innerText = "Copy Link";
+        }, 1500);
+      });
+    });
+
     animate();
+
+    // Load presets and check URL query at startup
+    applyPresetFromURL().then(() => {
+      updateGalleryUI();
+    });
   </script>
 </body>
 </html>
