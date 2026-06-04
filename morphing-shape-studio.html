@@ -1,0 +1,1425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Morphing Shape Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: #080810;
+      color: #e8e8f0;
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 1;
+      background: radial-gradient(ellipse 80% 70% at 50% 45%, transparent 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0.85) 100%);
+    }
+    #canvas-container {
+      position: fixed; inset: 0; z-index: 0;
+      cursor: crosshair;
+      touch-action: none;
+    }
+    #canvas-container canvas { display: block; width: 100%; height: 100%; }
+    #canvas-container.is-touching { cursor: none; }
+    #cursor-glow {
+      position: fixed; width: 280px; height: 280px; margin: -140px 0 0 -140px;
+      border-radius: 50%; pointer-events: none; z-index: 2;
+      background: radial-gradient(circle, rgba(120,200,255,0.14) 0%, transparent 70%);
+      opacity: 0.65;
+      will-change: left, top;
+    }
+    .panel {
+      position: fixed; z-index: 10;
+      background: rgba(12, 14, 28, 0.55);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 0 40px rgba(80,120,255,0.06), inset 0 1px 0 rgba(255,255,255,0.04);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .panel-header {
+      font-family: 'Syne', sans-serif;
+      font-weight: 600;
+      font-size: 0.7rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.45);
+      margin-bottom: 10px;
+    }
+    .panel-inner {
+      padding: 20px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.15) transparent;
+    }
+    .panel-inner::-webkit-scrollbar { width: 4px; }
+    .panel-inner::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+    .panel-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 18px;
+      background: linear-gradient(135deg, #fff 0%, rgba(180,200,255,0.8) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .section { margin-bottom: 20px; }
+    .btn-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .btn-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+    .pill, .mat-btn, .shape-btn {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.72rem;
+      font-weight: 500;
+      padding: 10px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.04);
+      color: rgba(255,255,255,0.75);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+    .pill:hover, .mat-btn:hover, .shape-btn:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.2);
+      color: #fff;
+    }
+    .pill.active, .mat-btn.active, .shape-btn.active {
+      background: rgba(100, 180, 255, 0.2);
+      border-color: rgba(100, 200, 255, 0.5);
+      color: #fff;
+      box-shadow: 0 0 20px rgba(80, 160, 255, 0.25);
+    }
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .swatch {
+      aspect-ratio: 1;
+      border-radius: 8px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    .swatch:hover { transform: scale(1.08); }
+    .swatch.active {
+      border-color: #fff;
+      box-shadow: 0 0 12px rgba(255,255,255,0.4);
+    }
+    .mood-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .mood-btn {
+      flex: 1;
+      min-width: calc(50% - 4px);
+      padding: 8px 10px;
+      font-size: 0.68rem;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(0,0,0,0.3);
+      color: rgba(255,255,255,0.7);
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .mood-btn:hover { border-color: rgba(255,255,255,0.25); color: #fff; }
+    .mood-btn.active {
+      border-color: var(--accent, #6af);
+      box-shadow: 0 0 16px rgba(100,180,255,0.2);
+    }
+    .color-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .color-input-wrap label { font-size: 0.75rem; color: rgba(255,255,255,0.5); }
+    input[type="color"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 48px; height: 32px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: transparent;
+    }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch {
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+    }
+    .slider-row {
+      margin-bottom: 14px;
+    }
+    .slider-row label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.55);
+      margin-bottom: 6px;
+    }
+    .slider-row label span { color: rgba(255,255,255,0.85); font-weight: 500; }
+    input[type="range"] {
+      width: 100%;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(255,255,255,0.1);
+      border-radius: 4px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #8cf, #a6f);
+      box-shadow: 0 0 10px rgba(120,200,255,0.6);
+      cursor: pointer;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.8rem;
+    }
+    .toggle {
+      width: 44px; height: 24px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      cursor: pointer;
+      position: relative;
+      transition: background 0.2s;
+    }
+    .toggle.on { background: rgba(80,160,255,0.4); border-color: rgba(100,200,255,0.5); }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.2s;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    .toggle.on::after { transform: translateX(20px); }
+    .hint {
+      font-size: 0.65rem;
+      color: rgba(255,255,255,0.35);
+      margin-top: 16px;
+      line-height: 1.5;
+    }
+    .kbd { display: inline-block; padding: 2px 5px; border-radius: 4px; background: rgba(255,255,255,0.08); font-size: 0.6rem; }
+
+    /* Desktop sidebar */
+    @media (min-width: 769px) {
+      #controls-panel {
+        top: 20px; right: 20px; bottom: 20px;
+        width: 280px;
+      }
+      .drawer-handle { display: none; }
+    }
+
+    /* Mobile drawer */
+    @media (max-width: 768px) {
+      #controls-panel {
+        left: 12px; right: 12px; bottom: 0;
+        width: auto;
+        border-radius: 20px 20px 0 0;
+        max-height: 55vh;
+      }
+      #controls-panel.collapsed {
+        transform: translateY(calc(100% - 52px));
+      }
+      .drawer-handle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px;
+        cursor: grab;
+      }
+      .drawer-handle::before {
+        content: '';
+        width: 40px; height: 4px;
+        border-radius: 2px;
+        background: rgba(255,255,255,0.25);
+      }
+      .panel-inner { max-height: calc(55vh - 52px); padding: 16px 20px 24px; }
+      .btn-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div id="cursor-glow"></div>
+  <div id="canvas-container"></div>
+
+  <aside id="controls-panel" class="panel">
+    <div class="drawer-handle" id="drawer-handle" aria-hidden="true"></div>
+    <div class="panel-inner">
+      <h1 class="panel-title">Shape Studio</h1>
+
+      <section class="section">
+        <div class="panel-header">Geometry</div>
+        <div class="btn-grid" id="shape-buttons">
+          <button class="shape-btn active" data-shape="0">Blob</button>
+          <button class="shape-btn" data-shape="1">Sphere</button>
+          <button class="shape-btn" data-shape="2">Knot</button>
+          <button class="shape-btn" data-shape="3">Cube</button>
+          <button class="shape-btn" data-shape="4">Crystal</button>
+          <button class="shape-btn" data-shape="5">Cone</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="panel-header">Material</div>
+        <div class="btn-grid cols-2" id="mat-buttons">
+          <button class="mat-btn active" data-mat="0">Holographic</button>
+          <button class="mat-btn" data-mat="1">Liquid Metal</button>
+          <button class="mat-btn" data-mat="2">Frosted Glass</button>
+          <button class="mat-btn" data-mat="3">Matte Clay</button>
+          <button class="mat-btn" data-mat="4">Wireframe</button>
+          <button class="mat-btn" data-mat="5">Neon Glow</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="panel-header">Color</div>
+        <div class="swatches" id="color-swatches"></div>
+        <div class="color-input-wrap">
+          <label for="custom-color">Custom</label>
+          <input type="color" id="custom-color" value="#66ccff" />
+        </div>
+        <div class="mood-row" id="mood-buttons">
+          <button class="mood-btn active" data-mood="aurora">Aurora</button>
+          <button class="mood-btn" data-mood="ember">Ember</button>
+          <button class="mood-btn" data-mood="arctic">Arctic</button>
+          <button class="mood-btn" data-mood="void">Void</button>
+          <button class="mood-btn" data-mood="prism" style="min-width:100%">Prism</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="panel-header">Parameters</div>
+        <div class="slider-row">
+          <label>Speed <span id="val-speed">1.0×</span></label>
+          <input type="range" id="speed" min="0.1" max="3" step="0.1" value="1" />
+        </div>
+        <div class="slider-row">
+          <label>Distortion <span id="val-distortion">0.65</span></label>
+          <input type="range" id="distortion" min="0" max="1" step="0.01" value="0.65" />
+        </div>
+        <div class="slider-row">
+          <label>Size <span id="val-size">1.0×</span></label>
+          <input type="range" id="size" min="0.5" max="2" step="0.05" value="1" />
+        </div>
+        <div class="toggle-row">
+          <span>Bloom halo</span>
+          <div class="toggle on" id="glow-toggle" role="switch" aria-checked="true"></div>
+        </div>
+      </section>
+
+      <p class="hint">
+        <span class="kbd">1</span>–<span class="kbd">6</span> shapes ·
+        <span class="kbd">Q</span>–<span class="kbd">Y</span> materials ·
+        <span class="kbd">Space</span> auto-rotate · hover or click the blob to push
+      </p>
+    </div>
+  </aside>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+
+    // ——— Simplex 3D noise (compact) ———
+    const grad3 = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
+    const p = new Uint8Array(512);
+    const perm = new Uint8Array(512);
+    (function initPerm() {
+      const permTable = new Uint8Array(256);
+      for (let i = 0; i < 256; i++) permTable[i] = i;
+      for (let i = 255; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [permTable[i], permTable[j]] = [permTable[j], permTable[i]];
+      }
+      for (let i = 0; i < 512; i++) {
+        p[i] = permTable[i & 255];
+        perm[i] = p[i];
+      }
+    })();
+    const dot = (g, x, y, z) => g[0]*x + g[1]*y + g[2]*z;
+    function noise3D(x, y, z) {
+      const F3 = 1/3, G3 = 1/6;
+      const s = (x+y+z)*F3;
+      const i = Math.floor(x+s), j = Math.floor(y+s), k = Math.floor(z+s);
+      const t = (i+j+k)*G3;
+      const X0 = i-t, Y0 = j-t, Z0 = k-t;
+      const x0 = x-X0, y0 = y-Y0, z0 = z-Z0;
+      let i1,j1,k1,i2,j2,k2;
+      if (x0>=y0) { if(y0>=z0){i1=1;j1=0;k1=0;i2=1;j2=1;k2=0;} else if(x0>=z0){i1=1;j1=0;k1=0;i2=1;j2=0;k2=1;} else{i1=0;j1=0;k1=1;i2=1;j2=0;k2=1;} }
+      else { if(y0<z0){i1=0;j1=0;k1=1;i2=0;j2=1;k2=1;} else if(x0<z0){i1=0;j1=1;k1=0;i2=0;j2=1;k2=1;} else{i1=0;j1=1;k1=0;i2=1;j2=1;k2=0;} }
+      const x1=x0-i1+G3,y1=y0-j1+G3,z1=z0-k1+G3;
+      const x2=x0-i2+2*G3,y2=y0-j2+2*G3,z2=z0-k2+2*G3;
+      const x3=x0-1+3*G3,y3=y0-1+3*G3,z3=z0-1+3*G3;
+      const ii=i&255,jj=j&255,kk=k&255;
+      const gi0=perm[ii+perm[jj+perm[kk]]]%12;
+      const gi1=perm[ii+i1+perm[jj+j1+perm[kk+k1]]]%12;
+      const gi2=perm[ii+i2+perm[jj+j2+perm[kk+k2]]]%12;
+      const gi3=perm[ii+1+perm[jj+1+perm[kk+1]]]%12;
+      let n0,n1,n2,n3;
+      let t0=0.6-x0*x0-y0*y0-z0*z0; if(t0<0)n0=0; else{t0*=t0;n0=t0*t0*dot(grad3[gi0],x0,y0,z0);}
+      let t1=0.6-x1*x1-y1*y1-z1*z1; if(t1<0)n1=0; else{t1*=t1;n1=t1*t1*dot(grad3[gi1],x1,y1,z1);}
+      let t2=0.6-x2*x2-y2*y2-z2*z2; if(t2<0)n2=0; else{t2*=t2;n2=t2*t2*dot(grad3[gi2],x2,y2,z2);}
+      let t3=0.6-x3*x3-y3*y3-z3*z3; if(t3<0)n3=0; else{t3*=t3;n3=t3*t3*dot(grad3[gi3],x3,y3,z3);}
+      return 32*(n0+n1+n2+n3);
+    }
+
+    const SWATCH_COLORS = [
+      '#66ccff','#ff6b9d','#c084fc','#34d399','#fbbf24',
+      '#f97316','#ef4444','#818cf8','#22d3ee','#a3e635',
+      '#e879f9','#ffffff'
+    ];
+
+    const MOODS = {
+      aurora: { a: new THREE.Color('#2dd4bf'), b: new THREE.Color('#a78bfa'), animate: false },
+      ember: { a: new THREE.Color('#ea580c'), b: new THREE.Color('#be123c'), animate: false },
+      arctic: { a: new THREE.Color('#38bdf8'), b: new THREE.Color('#f0f9ff'), animate: false },
+      void: { a: new THREE.Color('#0a0a12'), b: new THREE.Color('#312e81'), animate: false },
+      prism: { a: new THREE.Color('#ff0080'), b: new THREE.Color('#00ffcc'), animate: true }
+    };
+
+    const isMobile = () => window.innerWidth < 768;
+    const DETAIL = isMobile() ? 5 : 7;
+    const MORPH_FRAMES = 60;
+
+    // ——— Shape target position generators ———
+    function dirToSphere(x, y, z) {
+      const len = Math.sqrt(x*x+y*y+z*z) || 1;
+      return new THREE.Vector3(x/len, y/len, z/len);
+    }
+
+    // Precompute crystal (low-poly icosahedron) face data for faceted projection
+    const _crystalFaces = [];
+    {
+      const cg = new THREE.IcosahedronGeometry(1, 0).toNonIndexed();
+      const cp = cg.attributes.position;
+      for (let fi = 0; fi < cp.count; fi += 3) {
+        const ax = cp.getX(fi), ay = cp.getY(fi), az = cp.getZ(fi);
+        const ebx = cp.getX(fi+1)-ax, eby = cp.getY(fi+1)-ay, ebz = cp.getZ(fi+1)-az;
+        const ecx = cp.getX(fi+2)-ax, ecy = cp.getY(fi+2)-ay, ecz = cp.getZ(fi+2)-az;
+        let fnx = eby*ecz-ebz*ecy, fny = ebz*ecx-ebx*ecz, fnz = ebx*ecy-eby*ecx;
+        const fl = Math.sqrt(fnx*fnx+fny*fny+fnz*fnz)||1;
+        fnx/=fl; fny/=fl; fnz/=fl;
+        _crystalFaces.push({nx:fnx,ny:fny,nz:fnz,d:fnx*ax+fny*ay+fnz*az});
+      }
+      cg.dispose();
+    }
+
+    function posBlob(nx, ny, nz, t) {
+      const n = noise3D(nx*1.2+t*0.3, ny*1.2+t*0.25, nz*1.2) * 0.35
+        + Math.sin(nx*4+t)*Math.cos(ny*3+t*0.7)*0.08;
+      const r = 1 + n * 0.4;
+      return new THREE.Vector3(nx*r, ny*r, nz*r);
+    }
+
+    function posSphere(nx, ny, nz) {
+      return new THREE.Vector3(nx, ny, nz);
+    }
+
+    function posTorusKnot(nx, ny, nz) {
+      const theta = Math.atan2(nz, nx);
+      const phi = Math.acos(Math.max(-1, Math.min(1, ny)));
+      const kp = 2, kq = 3, R = 0.55, tubeR = 0.22;
+      const u = theta + Math.PI;
+      const v = phi * 2.0;
+      // Torus knot center curve
+      const cr = R + 0.12 * Math.cos(kq * u);
+      const cx = cr * Math.cos(kp * u), cy = cr * Math.sin(kp * u), cz = 0.32 * Math.sin(kq * u);
+      // Tangent via finite difference
+      const du = 0.001;
+      const cr2 = R + 0.12 * Math.cos(kq * (u + du));
+      const cx2 = cr2 * Math.cos(kp * (u + du)), cy2 = cr2 * Math.sin(kp * (u + du)), cz2 = 0.32 * Math.sin(kq * (u + du));
+      let tx = cx2-cx, ty = cy2-cy, tz = cz2-cz;
+      const tl = Math.sqrt(tx*tx+ty*ty+tz*tz)||1;
+      tx/=tl; ty/=tl; tz/=tl;
+      // Normal via Gram-Schmidt (radial direction, orthogonalized to tangent)
+      const cl = Math.sqrt(cx*cx+cy*cy)||1;
+      let nnx = cx/cl, nny = cy/cl, nnz = 0;
+      const nd = nnx*tx+nny*ty+nnz*tz;
+      nnx -= nd*tx; nny -= nd*ty; nnz -= nd*tz;
+      const nl = Math.sqrt(nnx*nnx+nny*nny+nnz*nnz)||1;
+      nnx/=nl; nny/=nl; nnz/=nl;
+      // Binormal = T × N
+      const bx = ty*nnz-tz*nny, by = tz*nnx-tx*nnz, bz = tx*nny-ty*nnx;
+      return new THREE.Vector3(
+        cx + tubeR*(Math.cos(v)*nnx + Math.sin(v)*bx),
+        cy + tubeR*(Math.cos(v)*nny + Math.sin(v)*by),
+        cz + tubeR*(Math.cos(v)*nnz + Math.sin(v)*bz)
+      );
+    }
+
+    function posCube(nx, ny, nz) {
+      const ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
+      const maxAbs = Math.max(ax, ay, az);
+      if (maxAbs < 0.001) return new THREE.Vector3(0, 0, 0);
+      const s = 0.85 / maxAbs;
+      // 95% cube + 5% sphere for subtle edge rounding
+      const b = 0.05;
+      return new THREE.Vector3(
+        nx*s*(1-b) + nx*0.85*b,
+        ny*s*(1-b) + ny*0.85*b,
+        nz*s*(1-b) + nz*0.85*b
+      );
+    }
+
+    function posIcosahedron(nx, ny, nz) {
+      // Project direction onto nearest icosahedron face for faceted crystal look
+      let bestDot = -Infinity, bestD = 0;
+      for (const f of _crystalFaces) {
+        const d = nx*f.nx + ny*f.ny + nz*f.nz;
+        if (d > bestDot) { bestDot = d; bestD = f.d; }
+      }
+      if (bestDot < 0.001) return new THREE.Vector3(nx, ny, nz);
+      const t = (bestD / bestDot) * 1.15;
+      return new THREE.Vector3(nx*t, ny*t, nz*t);
+    }
+
+    function posCone(nx, ny, nz) {
+      const theta = Math.atan2(nz, nx);
+      const y = (ny + 1) * 0.5;
+      const radius = (1 - y) * 0.85 + 0.05;
+      return new THREE.Vector3(
+        Math.cos(theta) * radius,
+        ny * 1.1,
+        Math.sin(theta) * radius
+      );
+    }
+
+    const shapeFns = [posBlob, posSphere, posTorusKnot, posCube, posIcosahedron, posCone];
+
+    // ——— State ———
+    const state = {
+      shapeIndex: 0,
+      targetShape: 0,
+      morphProgress: 1,
+      matIndex: 0,
+      baseColor: new THREE.Color('#66ccff'),
+      mood: 'aurora',
+      useMoodColor: true,
+      speed: 1,
+      distortion: 0.65,
+      size: 1,
+      glow: true,
+      autoRotate: true,
+      time: 0,
+      introScale: 0,
+      introDone: false,
+      mouse: new THREE.Vector2(-10, -10),
+      mouseSmoothed: new THREE.Vector2(-10, -10),
+      pointerDown: false,
+      pointerPressure: 0,
+      touchStrength: 1
+    };
+
+    // ——— Scene setup ———
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080810);
+    scene.fog = new THREE.FogExp2(0x080810, 0.04);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 0, 4.2);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x080810, 1);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    container.appendChild(renderer.domElement);
+
+    RectAreaLightUniformsLib.init();
+
+    // Hemisphere light for natural ambient fill (sky blue + deep purple)
+    const ambient = new THREE.HemisphereLight(0xb1e1ff, 0x1a0a2e, 0.7);
+    scene.add(ambient);
+
+    const pointFront = new THREE.PointLight(0x66ccff, 1.5, 20);
+    pointFront.position.set(2, 3, 4);
+    scene.add(pointFront);
+
+    const pointBack = new THREE.PointLight(0xa78bfa, 1.1, 20);
+    pointBack.position.set(-3, -2, -4);
+    scene.add(pointBack);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(5, 8, 6);
+    scene.add(dirLight);
+
+    const fillLight = new THREE.DirectionalLight(0x8866cc, 0.4);
+    fillLight.position.set(-4, -2, -5);
+    scene.add(fillLight);
+
+    const rectLight = new THREE.RectAreaLight(0x88aaff, 0.6, 4, 4);
+    rectLight.position.set(-3, 2, 3);
+    rectLight.lookAt(0, 0, 0);
+    scene.add(rectLight);
+
+    const neonPulse = new THREE.PointLight(0xff66cc, 0, 8);
+    scene.add(neonPulse);
+
+    // Procedural environment map for realistic reflections & refractions
+    // Procedural environment map for realistic reflections & refractions
+    let currentEnvMap = null;
+    function updateEnvironmentMap(moodName) {
+      const pmremGenerator = new THREE.PMREMGenerator(renderer);
+      const envScene = new THREE.Scene();
+      const envGeo = new THREE.SphereGeometry(10, 32, 32);
+      const envCols = new Float32Array(envGeo.attributes.position.count * 3);
+      
+      let colorA, colorB;
+      
+      if (state.useMoodColor) {
+        const m = MOODS[moodName] || MOODS.aurora;
+        colorA = m.a.clone();
+        colorB = m.b.clone();
+      } else {
+        const palette = getMoodPalette();
+        colorA = palette.a;
+        colorB = palette.b;
+      }
+      
+      for (let ei = 0; ei < envGeo.attributes.position.count; ei++) {
+        const ey = envGeo.attributes.position.getY(ei) / 10;
+        const mixVal = (ey + 1) * 0.5;
+        const ec = colorA.clone().lerp(colorB, mixVal);
+        ec.multiplyScalar(0.15); // Dim the background color slightly for reflection pop
+        envCols[ei * 3] = ec.r; envCols[ei * 3 + 1] = ec.g; envCols[ei * 3 + 2] = ec.b;
+      }
+      envGeo.setAttribute('color', new THREE.BufferAttribute(envCols, 3));
+      envScene.add(new THREE.Mesh(envGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+      
+      // Dynamic accent spots matching mood colors for specular reflections
+      const spotGeo = new THREE.SphereGeometry(0.5, 8, 8);
+      const spots = [
+        [4, 4, 3, colorA.clone().multiplyScalar(1.5)],
+        [-4, 2, -3, colorB.clone().multiplyScalar(1.5)],
+        [2, -3, 4, colorA.clone().lerp(colorB, 0.5).multiplyScalar(1.2)],
+        [0, 5, 0, new THREE.Color(0xffffff)]
+      ];
+      spots.forEach(([x, y, z, c]) => {
+        const sm = new THREE.Mesh(spotGeo, new THREE.MeshBasicMaterial({ color: c }));
+        sm.position.set(x, y, z);
+        envScene.add(sm);
+      });
+      
+      if (currentEnvMap) currentEnvMap.dispose();
+      currentEnvMap = pmremGenerator.fromScene(envScene, 0.04).texture;
+      scene.environment = currentEnvMap;
+      pmremGenerator.dispose();
+    }
+    updateEnvironmentMap('aurora');
+
+    // Base geometry
+    const geo = new THREE.IcosahedronGeometry(1, DETAIL);
+    const count = geo.attributes.position.count;
+    const basePositions = geo.attributes.position.array.slice();
+    const currentPositions = new Float32Array(count * 3);
+    const targetPositions = new Float32Array(count * 3);
+    const morphFrom = new Float32Array(count * 3);
+    const touchSpring = new Float32Array(count * 3);
+    const baseBuffer = new Float32Array(count * 3);
+    const restVec = new THREE.Vector3();
+    const contactLocal = new THREE.Vector3();
+    const contactWorld = new THREE.Vector3();
+    const hitNormal = new THREE.Vector3();
+    const invMatrix = new THREE.Matrix4();
+
+    function computeShapeTargets(shapeIdx, t) {
+      const pos = geo.attributes.position;
+      for (let i = 0; i < count; i++) {
+        const bx = basePositions[i*3];
+        const by = basePositions[i*3+1];
+        const bz = basePositions[i*3+2];
+        const dir = dirToSphere(bx, by, bz);
+        let v;
+        if (shapeIdx === 0) v = posBlob(dir.x, dir.y, dir.z, t);
+        else v = shapeFns[shapeIdx](dir.x, dir.y, dir.z, t);
+        targetPositions[i*3] = v.x;
+        targetPositions[i*3+1] = v.y;
+        targetPositions[i*3+2] = v.z;
+      }
+    }
+
+    computeShapeTargets(0, 0);
+    currentPositions.set(targetPositions);
+    geo.setAttribute('position', new THREE.BufferAttribute(currentPositions, 3));
+    geo.computeVertexNormals();
+
+    // Materials
+    const materials = [];
+    function buildMaterials() {
+      const c = () => state.baseColor.clone();
+      return [
+        // 0: Holographic — premium iridescent pearlescent foil (reflective, not glowing)
+        new THREE.MeshPhysicalMaterial({
+          color: c(),
+          metalness: 0.95,
+          roughness: 0.05,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.08,
+          iridescence: 1.0,
+          iridescenceIOR: 2.3,
+          iridescenceThicknessRange: [200, 800],
+          sheen: 0.8,
+          sheenRoughness: 0.15,
+          sheenColor: new THREE.Color('#ffffff'),
+          envMapIntensity: 2.2,
+          side: THREE.DoubleSide
+        }),
+        // 1: Liquid Metal — mirror-like reflections
+        new THREE.MeshPhysicalMaterial({
+          color: c(), metalness: 1.0, roughness: 0.03,
+          clearcoat: 0.6, clearcoatRoughness: 0.02,
+          envMapIntensity: 2.5, reflectivity: 1.0
+        }),
+        // 2: Frosted Glass — transmission with refraction
+        new THREE.MeshPhysicalMaterial({
+          color: c(), metalness: 0, roughness: 0.15,
+          transmission: 0.96, transparent: true,
+          thickness: 1.2, ior: 1.5,
+          attenuationColor: c(), attenuationDistance: 0.4,
+          clearcoat: 0.2, clearcoatRoughness: 0.35,
+          envMapIntensity: 1.2, side: THREE.DoubleSide
+        }),
+        // 3: Matte Clay — soft tactile surface with subtle sheen
+        new THREE.MeshPhysicalMaterial({
+          color: c(), metalness: 0, roughness: 1.0,
+          clearcoat: 0.06, clearcoatRoughness: 0.9,
+          sheen: 0.8, sheenRoughness: 0.85,
+          sheenColor: c(),
+          envMapIntensity: 0.3
+        }),
+        // 4: Wireframe
+        new THREE.MeshBasicMaterial({
+          color: c(), wireframe: true
+        }),
+        // 5: Neon Glow — self-luminous glowing neon glass tube
+        new THREE.MeshPhysicalMaterial({
+          color: c(),
+          emissive: c(),
+          emissiveIntensity: 2.2,
+          metalness: 0,
+          roughness: 0.1,
+          transmission: 0.55,
+          transparent: true,
+          thickness: 1.2,
+          ior: 1.5,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.02,
+          envMapIntensity: 0.2
+        })
+      ];
+    }
+    materials.push(...buildMaterials());
+    let mesh = new THREE.Mesh(geo, materials[0]);
+    scene.add(mesh);
+
+    // Bloom halo mesh
+    const haloGeo = geo.clone();
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: state.baseColor,
+      transparent: true,
+      opacity: 0.12,
+      side: THREE.BackSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const haloMesh = new THREE.Mesh(haloGeo, haloMat);
+    haloMesh.scale.setScalar(1.08);
+    scene.add(haloMesh);
+
+    // Orbit ring
+    const ringGeo = new THREE.TorusGeometry(1.65, 0.012, 16, 128);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x66ccff,
+      transparent: true,
+      opacity: 0.45,
+      blending: THREE.AdditiveBlending
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI / 2.2;
+    scene.add(ring);
+
+    // Particles
+    const particleCount = isMobile() ? 200 : 280;
+    const particlePositions = new Float32Array(particleCount * 3);
+    for (let i = 0; i < particleCount; i++) {
+      particlePositions[i*3] = (Math.random() - 0.5) * 14;
+      particlePositions[i*3+1] = (Math.random() - 0.5) * 10;
+      particlePositions[i*3+2] = (Math.random() - 0.5) * 8 - 2;
+    }
+    const particleGeo = new THREE.BufferGeometry();
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+    const particles = new THREE.Points(
+      particleGeo,
+      new THREE.PointsMaterial({
+        color: 0x88aacc,
+        size: 0.025,
+        transparent: true,
+        opacity: 0.5,
+        sizeAttenuation: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    scene.add(particles);
+
+    const raycaster = new THREE.Raycaster();
+    const mouseVec = new THREE.Vector2();
+
+    // ——— UI ———
+    const swatchContainer = document.getElementById('color-swatches');
+    SWATCH_COLORS.forEach((hex, i) => {
+      const el = document.createElement('button');
+      el.className = 'swatch' + (i === 0 ? ' active' : '');
+      el.style.background = hex;
+      el.dataset.color = hex;
+      el.setAttribute('aria-label', `Color ${hex}`);
+      swatchContainer.appendChild(el);
+    });
+
+    function setActiveInGroup(selector, activeEl) {
+      document.querySelectorAll(selector).forEach(b => b.classList.remove('active'));
+      activeEl.classList.add('active');
+    }
+
+    function applyColor(hex) {
+      const h = hex.startsWith('#') ? hex : '#' + hex;
+      state.baseColor.set(h);
+      materials.forEach(m => {
+        if (m.color) m.color.copy(state.baseColor);
+        if (m.emissive) m.emissive.copy(state.baseColor);
+        if (m.sheenColor) m.sheenColor.copy(state.baseColor).offsetHSL(0, -0.1, 0.12);
+        if (m.attenuationColor) m.attenuationColor.copy(state.baseColor);
+      });
+      haloMat.color.copy(state.baseColor);
+      ringMat.color.copy(state.baseColor);
+      particles.material.color.copy(state.baseColor);
+      document.documentElement.style.setProperty('--accent', h);
+      const r = state.baseColor.r, g = state.baseColor.g, b = state.baseColor.b;
+      cursorGlowEl.style.background = `radial-gradient(circle, rgba(${Math.round(r*255)},${Math.round(g*255)},${Math.round(b*255)},0.14) 0%, transparent 70%)`;
+    }
+
+    function getMoodPalette() {
+      const base = state.baseColor.clone();
+      
+      switch (state.mood) {
+        case 'aurora': {
+          const a = base.clone().offsetHSL(-0.08, -0.05, 0.1);
+          const b = base.clone().offsetHSL(0.12, 0.05, 0.0);
+          return { a, b };
+        }
+        case 'ember': {
+          const a = base.clone().offsetHSL(-0.05, 0.15, 0.1);
+          const b = base.clone().offsetHSL(-0.15, 0.2, -0.15);
+          return { a, b };
+        }
+        case 'arctic': {
+          const a = base.clone().offsetHSL(0.02, -0.3, 0.25);
+          const b = base.clone().offsetHSL(-0.02, -0.4, 0.4);
+          return { a, b };
+        }
+        case 'void': {
+          const a = base.clone().offsetHSL(0, -0.4, -0.45);
+          const b = base.clone().offsetHSL(0.05, -0.2, -0.3);
+          return { a, b };
+        }
+        case 'prism': {
+          const hue = (state.time * 0.08) % 1;
+          const a = new THREE.Color().setHSL(hue, 0.85, 0.55);
+          const b = new THREE.Color().setHSL((hue + 0.33) % 1, 0.85, 0.5);
+          return { a, b };
+        }
+        default:
+          return { a: base, b: base };
+      }
+    }
+
+    function getMoodColors(t) {
+      const m = MOODS[state.mood] || MOODS.aurora;
+      if (!m.animate) {
+        const palette = getMoodPalette();
+        const mix = (Math.sin(t * 0.4) + 1) * 0.5;
+        return {
+          primary: palette.a.clone().lerp(palette.b, mix),
+          secondary: palette.b.clone().lerp(palette.a, mix)
+        };
+      }
+      const hue = (t * 0.15) % 1;
+      const c1 = new THREE.Color().setHSL(hue, 0.85, 0.55);
+      const c2 = new THREE.Color().setHSL((hue + 0.35) % 1, 0.9, 0.5);
+      return { primary: c1, secondary: c2 };
+    }
+
+    function updateLights(t) {
+      const { primary, secondary } = getMoodColors(t);
+      pointFront.color.copy(primary);
+      pointBack.color.copy(secondary);
+      rectLight.color.copy(primary).lerp(secondary, 0.5);
+      const orbitR = 4.5;
+      pointFront.position.set(
+        Math.sin(t * 0.35) * orbitR,
+        2.5 + Math.sin(t * 0.2) * 0.5,
+        Math.cos(t * 0.35) * orbitR
+      );
+      pointBack.position.set(
+        Math.cos(t * 0.28 + 1) * orbitR,
+        -2 + Math.cos(t * 0.25) * 0.4,
+        Math.sin(t * 0.28 + 1) * orbitR
+      );
+      if (state.matIndex === 5) {
+        neonPulse.color.copy(primary);
+        neonPulse.intensity = 1.5 + Math.sin(t * 3 * state.speed) * 0.8;
+        neonPulse.position.copy(mesh.position);
+      } else {
+        neonPulse.intensity = 0;
+      }
+    }
+
+    function switchMaterial(idx) {
+      state.matIndex = idx;
+      mesh.material = materials[idx];
+      mesh.material.needsUpdate = true;
+    }
+
+    function switchShape(idx) {
+      if (idx === state.targetShape && state.morphProgress >= 1) return;
+      
+      // Apply sensible default distortion values for each shape
+      let defaultDistortion = 0.65;
+      if (idx === 1) defaultDistortion = 0;        // Sphere is clean by default
+      else if (idx === 2) defaultDistortion = 0.25; // Torus Knot is slightly organic
+      else if (idx === 3) defaultDistortion = 0.15; // Cube has slight wobble
+      else if (idx === 4) defaultDistortion = 0.08; // Crystal has minor facet shimmer
+      else if (idx === 5) defaultDistortion = 0.15; // Cone is slightly organic
+      
+      state.distortion = defaultDistortion;
+      const distSlider = document.getElementById('distortion');
+      if (distSlider) {
+        distSlider.value = defaultDistortion;
+        document.getElementById('val-distortion').textContent = defaultDistortion.toFixed(2);
+      }
+
+      morphFrom.set(currentPositions);
+      state.targetShape = idx;
+      state.shapeIndex = idx;
+      computeShapeTargets(idx, state.time);
+      state.morphProgress = 0;
+    }
+
+    function refreshMaterials() {
+      materials.forEach(m => m.dispose());
+      materials.length = 0;
+      materials.push(...buildMaterials());
+      switchMaterial(state.matIndex);
+    }
+
+    document.getElementById('shape-buttons').addEventListener('click', e => {
+      const btn = e.target.closest('[data-shape]');
+      if (!btn) return;
+      const idx = +btn.dataset.shape;
+      switchShape(idx);
+      setActiveInGroup('.shape-btn', btn);
+    });
+
+    document.getElementById('mat-buttons').addEventListener('click', e => {
+      const btn = e.target.closest('[data-mat]');
+      if (!btn) return;
+      switchMaterial(+btn.dataset.mat);
+      setActiveInGroup('.mat-btn', btn);
+    });
+
+    swatchContainer.addEventListener('click', e => {
+      const sw = e.target.closest('.swatch');
+      if (!sw) return;
+      state.useMoodColor = false;
+      applyColor(sw.dataset.color);
+      document.getElementById('custom-color').value = sw.dataset.color;
+      setActiveInGroup('.swatch', sw);
+      document.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('active'));
+    });
+
+    document.getElementById('custom-color').addEventListener('input', e => {
+      state.useMoodColor = false;
+      applyColor(e.target.value);
+      document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('active'));
+    });
+
+    document.getElementById('mood-buttons').addEventListener('click', e => {
+      const btn = e.target.closest('[data-mood]');
+      if (!btn) return;
+      state.mood = btn.dataset.mood;
+      state.useMoodColor = true;
+      updateEnvironmentMap(state.mood);
+      setActiveInGroup('.mood-btn', btn);
+      document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    });
+
+    document.getElementById('speed').addEventListener('input', e => {
+      state.speed = +e.target.value;
+      document.getElementById('val-speed').textContent = state.speed.toFixed(1) + '×';
+    });
+
+    document.getElementById('distortion').addEventListener('input', e => {
+      state.distortion = +e.target.value;
+      document.getElementById('val-distortion').textContent = state.distortion.toFixed(2);
+    });
+
+    document.getElementById('size').addEventListener('input', e => {
+      state.size = +e.target.value;
+      document.getElementById('val-size').textContent = state.size.toFixed(1) + '×';
+    });
+
+    const glowToggle = document.getElementById('glow-toggle');
+    glowToggle.addEventListener('click', () => {
+      state.glow = !state.glow;
+      glowToggle.classList.toggle('on', state.glow);
+      glowToggle.setAttribute('aria-checked', state.glow);
+      haloMesh.visible = state.glow;
+    });
+
+    // Mobile drawer
+    const panel = document.getElementById('controls-panel');
+    const drawerHandle = document.getElementById('drawer-handle');
+    if (isMobile()) panel.classList.add('collapsed');
+    drawerHandle.addEventListener('click', () => panel.classList.toggle('collapsed'));
+
+    // Keyboard
+    const matKeys = ['q','w','e','r','t','y'];
+    window.addEventListener('keydown', e => {
+      if (e.target.matches('input')) return;
+      const n = parseInt(e.key, 10);
+      if (n >= 1 && n <= 6) {
+        switchShape(n - 1);
+        const btn = document.querySelector(`.shape-btn[data-shape="${n-1}"]`);
+        if (btn) setActiveInGroup('.shape-btn', btn);
+      }
+      const ki = matKeys.indexOf(e.key.toLowerCase());
+      if (ki >= 0) {
+        switchMaterial(ki);
+        const btn = document.querySelector(`.mat-btn[data-mat="${ki}"]`);
+        if (btn) setActiveInGroup('.mat-btn', btn);
+      }
+      if (e.code === 'Space') {
+        e.preventDefault();
+        state.autoRotate = !state.autoRotate;
+      }
+    });
+
+    const smoothstep = (a, b, x) => {
+      const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+
+    const canvasEl = renderer.domElement;
+    const canvasWrap = document.getElementById('canvas-container');
+    const cursorGlow = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const cursorGlowEl = document.getElementById('cursor-glow');
+
+    function setPointerFromClient(clientX, clientY) {
+      const rect = canvasEl.getBoundingClientRect();
+      state.mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      state.mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      cursorGlow.x = clientX;
+      cursorGlow.y = clientY;
+    }
+
+    function onPointerDown(e) {
+      if (e.target.closest('.panel')) return;
+      state.pointerDown = true;
+      state.touchStrength = 1.8;
+      canvasWrap.classList.add('is-touching');
+      setPointerFromClient(e.clientX, e.clientY);
+    }
+
+    function onPointerUp() {
+      state.pointerDown = false;
+      state.touchStrength = 1;
+      canvasWrap.classList.remove('is-touching');
+    }
+
+    let pointerOnCanvas = false;
+    canvasEl.addEventListener('mouseenter', () => { pointerOnCanvas = true; });
+    canvasEl.addEventListener('mouseleave', () => {
+      pointerOnCanvas = false;
+      if (!state.pointerDown) onPointerUp();
+    });
+
+    window.addEventListener('mousemove', e => {
+      if (!state.pointerDown && e.target.closest('.panel')) return;
+      setPointerFromClient(e.clientX, e.clientY);
+    });
+    canvasEl.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      onPointerDown(e);
+    });
+    window.addEventListener('mouseup', onPointerUp);
+    window.addEventListener('mouseleave', onPointerUp);
+
+    canvasEl.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const t = e.touches[0];
+      onPointerDown({ clientX: t.clientX, clientY: t.clientY, target: canvasEl });
+    }, { passive: false });
+    canvasEl.addEventListener('touchmove', e => {
+      e.preventDefault();
+      const t = e.touches[0];
+      setPointerFromClient(t.clientX, t.clientY);
+      state.pointerDown = true;
+      state.touchStrength = 2.2;
+      canvasWrap.classList.add('is-touching');
+    }, { passive: false });
+    canvasEl.addEventListener('touchend', onPointerUp);
+
+    function updateCursorGlow() {
+      const cx = parseFloat(cursorGlowEl.style.left) || cursorGlow.x;
+      const cy = parseFloat(cursorGlowEl.style.top) || cursorGlow.y;
+      const lag = hasContact ? 0.28 : 0.12;
+      const nx = cx + (cursorGlow.x - cx) * lag;
+      const ny = cy + (cursorGlow.y - cy) * lag;
+      cursorGlowEl.style.left = nx + 'px';
+      cursorGlowEl.style.top = ny + 'px';
+      const s = hasContact ? 1.35 : 1;
+      cursorGlowEl.style.transform = `scale(${s})`;
+      cursorGlowEl.style.opacity = hasContact ? 0.9 : 0.55;
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    });
+
+    // Spring intro easing
+    function springScale(t) {
+      if (t >= 1) return 1;
+      const c4 = (2 * Math.PI) / 3;
+      return t === 0 ? 0 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+    }
+
+    const tmpVec = new THREE.Vector3();
+    const tmpVec2 = new THREE.Vector3();
+    const clock = new THREE.Clock();
+    const boundsSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1);
+    let hasContact = false;
+
+    function computeBaseBlob(dir, distAmt) {
+      const n = noise3D(dir.x * 1.5 + state.time * 0.4, dir.y * 1.5 + state.time * 0.35, dir.z * 1.5) * distAmt
+        + Math.sin(dir.x * 5 + state.time) * Math.cos(dir.y * 4 + state.time * 0.6) * 0.06 * distAmt
+        + Math.sin(state.time * 0.8 + dir.y * 2) * 0.04 * distAmt;
+      const breathe = 1 + Math.sin(state.time * 1.1) * 0.03 * distAmt;
+      const r = (1 + n * 0.45) * breathe;
+      return tmpVec2.set(dir.x * r, dir.y * r, dir.z * r);
+    }
+
+    function computeVertexBase(i, distAmt) {
+      let bx, by, bz;
+
+      if (state.morphProgress < 1) {
+        bx = currentPositions[i * 3];
+        by = currentPositions[i * 3 + 1];
+        bz = currentPositions[i * 3 + 2];
+      } else {
+        bx = targetPositions[i * 3];
+        by = targetPositions[i * 3 + 1];
+        bz = targetPositions[i * 3 + 2];
+
+        if (state.targetShape === 0) {
+          const dir = dirToSphere(
+            basePositions[i * 3], basePositions[i * 3 + 1], basePositions[i * 3 + 2]
+          );
+          const base = computeBaseBlob(dir, distAmt);
+          bx = base.x; by = base.y; bz = base.z;
+        } else if (distAmt > 0.01) {
+          const dir = dirToSphere(bx, by, bz);
+          const n = noise3D(dir.x * 2 + state.time * 0.3, dir.y * 2, dir.z * 2) * distAmt * 0.2;
+          const r = 1 + n;
+          bx *= r; by *= r; bz *= r;
+        }
+      }
+      const si = i * 3;
+      baseBuffer[si] = bx;
+      baseBuffer[si + 1] = by;
+      baseBuffer[si + 2] = bz;
+    }
+
+    function updateContact(scale) {
+      state.mouseSmoothed.lerp(state.mouse, state.pointerDown ? 0.72 : 0.52);
+
+      mouseVec.copy(state.mouseSmoothed);
+      if (state.mouse.x < -4) {
+        hasContact = false;
+        state.pointerPressure *= 0.85;
+        return;
+      }
+
+      raycaster.setFromCamera(mouseVec, camera);
+      mesh.updateMatrixWorld();
+      invMatrix.copy(mesh.matrixWorld).invert();
+      geo.computeBoundingSphere();
+
+      const hits = raycaster.intersectObject(mesh, false);
+      if (hits.length > 0) {
+        contactWorld.copy(hits[0].point);
+        if (hits[0].normal) hitNormal.copy(hits[0].normal);
+        else hitNormal.copy(contactWorld).sub(mesh.getWorldPosition(tmpVec)).normalize();
+        contactLocal.copy(contactWorld).applyMatrix4(invMatrix);
+        hasContact = true;
+      } else {
+        boundsSphere.radius = 1.08 * scale;
+        const hit = raycaster.ray.intersectSphere(boundsSphere, contactWorld);
+        if (hit) {
+          contactLocal.copy(hit).applyMatrix4(invMatrix);
+          hitNormal.copy(hit).sub(mesh.getWorldPosition(tmpVec)).normalize();
+          hasContact = true;
+        } else {
+          hasContact = false;
+        }
+      }
+
+      const targetPressure = !hasContact ? 0 : (state.pointerDown ? 1 : 0.75);
+      state.pointerPressure += (targetPressure - state.pointerPressure) * 0.28;
+    }
+
+    function applyFingerDeform(x, y, z, scale) {
+      if (!hasContact || state.pointerPressure < 0.02) return { x, y, z };
+
+      const px = x, py = y, pz = z;
+      const dist = Math.sqrt(
+        (px - contactLocal.x) ** 2 + (py - contactLocal.y) ** 2 + (pz - contactLocal.z) ** 2
+      );
+
+      const radius = 0.5 * scale * (0.9 + state.distortion * 0.4);
+      const press = state.pointerPressure * state.touchStrength * (0.38 + state.distortion * 0.55);
+
+      const core = 1 - smoothstep(0, radius * 0.6, dist);
+      const dent = core * core * (3 - 2 * core);
+
+      const len = Math.sqrt(px * px + py * py + pz * pz) || 1;
+      const nx = px / len, ny = py / len, nz = pz / len;
+
+      const ringBand = smoothstep(radius * 1.4, radius * 0.4, dist) * (1 - dent);
+      const bulge = ringBand * press * 0.5;
+
+      const depth = dent * press * 0.95;
+      return {
+        x: px - nx * depth + nx * bulge,
+        y: py - ny * depth + ny * bulge,
+        z: pz - nz * depth + nz * bulge
+      };
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      state.time += dt * state.speed;
+
+      // Intro scale
+      if (!state.introDone) {
+        state.introScale += dt / 1.2;
+        if (state.introScale >= 1) {
+          state.introScale = 1;
+          state.introDone = true;
+        }
+      }
+      const intro = springScale(Math.min(state.introScale, 1));
+      const scale = state.size * intro;
+
+      // Morph
+      if (state.morphProgress < 1) {
+        state.morphProgress = Math.min(1, state.morphProgress + 1 / MORPH_FRAMES);
+        const t = state.morphProgress;
+        const ease = t * t * (3 - 2 * t);
+        for (let i = 0; i < count * 3; i++) {
+          currentPositions[i] = morphFrom[i] + (targetPositions[i] - morphFrom[i]) * ease;
+        }
+      }
+
+      const posAttr = geo.attributes.position;
+      const distAmt = state.distortion * 0.85;
+      const springDecay = hasContact ? 0.72 : 0.8;
+      const springFollow = hasContact ? 0.55 : 0.3;
+
+      for (let i = 0; i < count; i++) computeVertexBase(i, distAmt);
+      posAttr.array.set(baseBuffer);
+      posAttr.needsUpdate = true;
+      geo.computeVertexNormals();
+
+      updateContact(scale);
+
+      for (let i = 0; i < count; i++) {
+        const bx = baseBuffer[i * 3];
+        const by = baseBuffer[i * 3 + 1];
+        const bz = baseBuffer[i * 3 + 2];
+
+        const finger = applyFingerDeform(bx, by, bz, scale);
+        const targetX = finger.x - bx;
+        const targetY = finger.y - by;
+        const targetZ = finger.z - bz;
+
+        const si = i * 3;
+        touchSpring[si] = touchSpring[si] * springDecay + targetX * springFollow;
+        touchSpring[si + 1] = touchSpring[si + 1] * springDecay + targetY * springFollow;
+        touchSpring[si + 2] = touchSpring[si + 2] * springDecay + targetZ * springFollow;
+
+        const x = bx + touchSpring[si];
+        const y = by + touchSpring[si + 1];
+        const z = bz + touchSpring[si + 2];
+
+        posAttr.array[si] = x;
+        posAttr.array[si + 1] = y;
+        posAttr.array[si + 2] = z;
+        currentPositions[si] = x;
+        currentPositions[si + 1] = y;
+        currentPositions[si + 2] = z;
+      }
+      posAttr.needsUpdate = true;
+      geo.computeVertexNormals();
+
+      // Smoothly transition base color to match mood colors if using mood colors
+      if (state.useMoodColor) {
+        const m = MOODS[state.mood];
+        if (m) {
+          let targetColor;
+          if (m.animate) {
+            const hue = (state.time * 0.08) % 1;
+            targetColor = new THREE.Color().setHSL(hue, 0.85, 0.55);
+          } else {
+            targetColor = m.a;
+          }
+          state.baseColor.lerp(targetColor, 0.05);
+          
+          materials.forEach(mat => {
+            if (mat.color) mat.color.copy(state.baseColor);
+            if (mat.sheenColor) mat.sheenColor.copy(state.baseColor).offsetHSL(0, -0.1, 0.12);
+            if (mat.attenuationColor) mat.attenuationColor.copy(state.baseColor);
+          });
+          haloMat.color.copy(state.baseColor);
+          ringMat.color.copy(state.baseColor);
+          particles.material.color.copy(state.baseColor);
+          
+          const hexStr = '#' + state.baseColor.getHexString();
+          document.documentElement.style.setProperty('--accent', hexStr);
+          const r = state.baseColor.r, g = state.baseColor.g, b = state.baseColor.b;
+          cursorGlowEl.style.background = `radial-gradient(circle, rgba(${Math.round(r*255)},${Math.round(g*255)},${Math.round(b*255)},0.14) 0%, transparent 70%)`;
+        }
+      }
+
+      // Update ambient hemisphere light and directional fill light dynamically to match baseColor
+      {
+        const base = state.baseColor;
+        const skyCol = base.clone().offsetHSL(0, -0.2, 0.2); // slightly lighter and desaturated
+        const groundCol = base.clone().offsetHSL(0, -0.4, -0.3); // much darker and desaturated
+        ambient.color.copy(skyCol);
+        ambient.groundColor.copy(groundCol);
+        
+        // Make directional fill light follow the base color but with a slight warm/cool hue shift
+        fillLight.color.copy(base).offsetHSL(0.08, -0.15, -0.1);
+      }
+
+      // Holographic hue shift
+      const mat = materials[0];
+      if (state.matIndex === 0 && mat.color) {
+        const { primary } = getMoodColors(state.time);
+        mat.color.copy(state.baseColor).lerp(primary, 0.35 + Math.sin(state.time * 2) * 0.15);
+      }
+
+      mesh.scale.setScalar(scale);
+      haloMesh.scale.setScalar(scale * 1.1);
+      haloMesh.visible = state.glow;
+      if (haloMesh.visible) {
+        haloMesh.geometry.attributes.position.array.set(posAttr.array);
+        haloMesh.geometry.attributes.position.needsUpdate = true;
+        haloMesh.geometry.computeVertexNormals();
+      }
+
+      const rotMul = hasContact ? 0.25 : 1;
+      if (state.autoRotate) {
+        mesh.rotation.y += 0.003 * state.speed * rotMul;
+        mesh.rotation.x += 0.0012 * state.speed * rotMul;
+      }
+      ring.rotation.z += 0.004 * state.speed;
+      ring.rotation.x = Math.PI / 2.2 + Math.sin(state.time * 0.2) * 0.1;
+
+      // Particles drift
+      const pp = particles.geometry.attributes.position.array;
+      for (let i = 0; i < particleCount; i++) {
+        pp[i*3+1] += Math.sin(state.time + i) * 0.0004;
+        if (pp[i*3+1] > 5) pp[i*3+1] = -5;
+      }
+      particles.geometry.attributes.position.needsUpdate = true;
+
+      updateCursorGlow();
+
+      updateLights(state.time);
+      // Update emissive color and intensity based on the active material
+      materials.forEach((m, idx) => {
+        if (!m.emissive) return;
+        if (idx === 0) {
+          // Holographic: no glow, purely reflective
+          m.emissive.setHex(0x000000);
+          m.emissiveIntensity = 0;
+        } else if (idx === 5) {
+          // Neon Glow: intense glowing emissive
+          m.emissive.copy(state.baseColor);
+          m.emissiveIntensity = 2.2 + Math.sin(state.time * 2.5) * 0.45; // subtle pulsing aura
+        } else {
+          // Other materials: very faint ambient glow to prevent pitch black areas
+          m.emissive.copy(state.baseColor).multiplyScalar(0.04);
+          m.emissiveIntensity = 1.0;
+        }
+      });
+
+      renderer.render(scene, camera);
+    }
+
+    cursorGlowEl.style.left = (window.innerWidth / 2) + 'px';
+    cursorGlowEl.style.top = (window.innerHeight / 2) + 'px';
+    setPointerFromClient(window.innerWidth * 0.42, window.innerHeight * 0.5);
+    applyColor('#66ccff');
+
+    computeShapeTargets(0, 0);
+    animate();
+  </script>
+</body>
+</html>
